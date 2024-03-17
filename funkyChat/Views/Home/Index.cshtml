@@ -1,0 +1,35 @@
+﻿@page
+@using System.Security.Cryptography;
+
+@{
+    //generate random hash and store it as a cookie
+    //we can check if this key meets the requirements, if it does, we will allow you to use it if it does not exist.
+    string secureRandomKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(64));
+    <p>Store, this is not stored in our servers</p>
+    <p>@secureRandomKey</p>
+}
+
+<form method="post" action="/Home/createRoom">
+    <input type="text" name="yurUsrKey" id="yurUsrKey" />
+    <div class="col-1">Enter Other User Key</div>
+    <input type="text" name="othrUsrKey" id="othrUsrKey" />
+    <button type="submit">Join Room</button>
+</form>
+
+<!--
+<div class="container">
+    <div class="row p-1">
+        <div class="col-1">Enter Other User Key</div>
+        <div class="col-5"><input type="text" id="userInput" /></div>
+    </div>
+    <div class="row p-1">
+        <div class="col-6 text-end">
+            <input type="button" id="sendButton" value="Join Room" />
+        </div>
+    </div>
+</div>
+-->
+
+<script src="~/js/signalr/dist/browser/signalr.js"></script>
+<script src="~/js/chat.js"></script>
+
