@@ -151,7 +151,7 @@
             }
 
             var connection = new signalR.HubConnectionBuilder()
-                .withUrl('/ChatHub')
+                .withUrl('/ChatHub', {skipNegotiation: true, transport: signalR.HttpTransportType.WebSockets})
                 .build();
             bindConnectionMessage(connection);
             connection.start()
