@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using Microsoft.EntityFrameworkCore;
 using System.Collections.Specialized;
 using FunkyChatt.Models;
+using System.Security.Cryptography;
 
 namespace funkyChat.Controllers
 {
@@ -20,6 +21,19 @@ namespace funkyChat.Controllers
         {
             _db = db;
             _logger = logger;
+        }
+
+        public (string, string) returnNewRSAPair()
+        {
+            RSACryptoServiceProvider rsaKey = new RSACryptoServiceProvider();
+            string privateKey = rsaKey.ToXmlString(true);
+            string publicKey = rsaKey.ToXmlString(false);
+
+            //convert these xml to a simple single line string format and return them
+            //store them into a database (redis)?
+            //use a captcha so you generate them infrequently and avoid spam and storage waste
+
+            return (privateKey, publicKey);
         }
 
         private static bool checkConnection(ApplicationDbContext _db)
@@ -54,8 +68,6 @@ namespace funkyChat.Controllers
 
             string pairHash = k1 + k2;
 
-            Debug.WriteLine("WHATS UP FREAK MOTHAFUKAS");
-
             var room = await _db.room.FirstOrDefaultAsync(x => x.keyPairHash == pairHash);
 
             if (room == null)
@@ -83,8 +95,19 @@ namespace funkyChat.Controllers
 
         public IActionResult Index()
         {
+            TempData["privateKey"] = "";
+            TempData["publicKey"] = "";
             return View();
         }
+
+        [HttpPost]
+        public IActionResult createCredentials()
+        {
+            (TempData["privateKey"], TempData["publicKey"]) = returnNewRSAPair();
+            return RedirectToAction("Index");
+        }
+
+
         [HttpPost]
         public async Task<IActionResult> createRoom(string yurUsrKey, string othrUsrKey)
         {

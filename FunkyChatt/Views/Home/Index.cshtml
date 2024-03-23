@@ -9,6 +9,14 @@
     <p>@secureRandomKey</p>
 }
 
+
+<form method="post" action="/Home/createCredentials">
+    <button type="submit">Create Your Private/Public Key</button>
+</form>
+<p>here</p>
+<p>@TempData["privateKey"]</p>
+<p>@TempData["publicKey"]</p>
+
 <form method="post" action="/Home/createRoom">
     <input type="text" name="yurUsrKey" id="yurUsrKey" />
     <div class="col-1">Enter Other User Key</div>
