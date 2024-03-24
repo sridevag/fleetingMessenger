@@ -9,6 +9,8 @@ using Microsoft.EntityFrameworkCore;
 using System.Collections.Specialized;
 using FunkyChatt.Models;
 using System.Security.Cryptography;
+using Microsoft.Extensions.ObjectPool;
+using Newtonsoft.Json;
 
 namespace funkyChat.Controllers
 {
@@ -23,25 +25,86 @@ namespace funkyChat.Controllers
             _logger = logger;
         }
 
-        public (string, string) returnNewRSAPair()
-        {
-            RSACryptoServiceProvider rsaKey = new RSACryptoServiceProvider();
-            string privateKey = rsaKey.ToXmlString(true);
-            string publicKey = rsaKey.ToXmlString(false);
 
-            //convert these xml to a simple single line string format and return them
-            //store them into a database (redis)?
+        public void initDictionaryKeysStartup(){
+
+            var addDict = new hashDict
+            {
+
+            };
+
+            _db.hashDict.Add(addDict);
+            _db.SaveChanges();
+
+            return;
+        }
+
+        public async Task<IActionResult> fetchAndAddKeysToDictionary(string pub, string priv)
+        {
+            hashDict dict = await _db.hashDict.FirstOrDefaultAsync(x=>x.Id==1);
+
+            if (dict == null)
+            {
+                return NotFound();
+            }
+
+            string keysDict = dict.publicPrivatePairs;
+            var dictionary = JsonConvert.DeserializeObject<Dictionary<hashKey, hashKey>>(keysDict);
+
+            var publicKeyHash = new hashKey
+            {
+                key = pub,
+            };
+
+            var privateKeyHash = new hashKey
+            {
+                key = priv,
+            };
+
+            dictionary.Add(publicKeyHash, privateKeyHash);
+
+            var updatedKeysDict = JsonConvert.SerializeObject(dictionary);
+
+            dict.publicPrivatePairs = updatedKeysDict;
+
+            _db.Entry(dict).State = EntityState.Modified;
+
+            await _db.SaveChangesAsync(); 
+
+            return Ok(200);
+        }
+
+
+        public async Task<(string, string)> ReturnNewRSAPair()
+        {
+          //  initDictionaryKeysStartup();
+            RSACryptoServiceProvider rsaKey = new RSACryptoServiceProvider();
+            string publicKeyBase64 = Convert.ToBase64String(rsaKey.ExportRSAPublicKey());
+            string privateKeyBase64 = Convert.ToBase64String(rsaKey.ExportRSAPrivateKey());
+
+            //store them into a database (redis)? for now I will use postgres itself by json conversion
             //use a captcha so you generate them infrequently and avoid spam and storage waste
 
-            return (privateKey, publicKey);
+            var result = await fetchAndAddKeysToDictionary(publicKeyBase64, privateKeyBase64);
+
+            if (result is OkObjectResult okObjectResult)
+            {
+                  return (privateKeyBase64, publicKeyBase64);
+            }
+            else if (result is NotFoundResult)
+            {
+                //create a new room from scratch 
+                return ("", "");
+            }
+
+            return (publicKeyBase64, privateKeyBase64);
+
+
         }
 
         private static bool checkConnection(ApplicationDbContext _db)
         {
             bool isConnected = _db.Database.CanConnect();
-
-            Debug.WriteLine("HELLO MARIO ME MARIO LUIGI");
-            Debug.WriteLine(isConnected);
 
             if (isConnected)
                 return true;
@@ -95,15 +158,13 @@ namespace funkyChat.Controllers
 
         public IActionResult Index()
         {
-            TempData["privateKey"] = "";
-            TempData["publicKey"] = "";
             return View();
         }
 
         [HttpPost]
-        public IActionResult createCredentials()
+        public async Task<IActionResult> createCredentials()
         {
-            (TempData["privateKey"], TempData["publicKey"]) = returnNewRSAPair();
+            (TempData["privateKey"], TempData["publicKey"]) = await ReturnNewRSAPair();
             return RedirectToAction("Index");
         }
 
@@ -112,7 +173,9 @@ namespace funkyChat.Controllers
         public async Task<IActionResult> createRoom(string yurUsrKey, string othrUsrKey)
         {
             //Check if strings are base64 encoded with a certain length
-            Debug.WriteLine("HERE!!!!");
+
+
+            //only use if first time starting up
 
             if (!(isBase64(othrUsrKey) && isBase64(yurUsrKey)) && (othrUsrKey != yurUsrKey))
                 //return the view with a message of invalid key pair

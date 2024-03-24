@@ -1,4 +1,5 @@
 ﻿using funkyChat.Models;
+using FunkyChatt.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 
@@ -20,5 +21,8 @@ namespace funkyChat.Data
 
         public DbSet<Room> room { get; set; }
         public DbSet<Message> message { get; set; }
+        public DbSet<hashDict> hashDict { get; set; }
+
+        
     }
 }
