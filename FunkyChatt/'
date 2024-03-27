@@ -13,7 +13,6 @@ using Microsoft.Extensions.ObjectPool;
 using Newtonsoft.Json;
 using Microsoft.AspNetCore.DataProtection.KeyManagement.Internal;
 using Npgsql;
-using Microsoft.AspNetCore.Mvc.Diagnostics;
 
 namespace funkyChat.Controllers
 {
@@ -33,8 +32,7 @@ namespace funkyChat.Controllers
 
             var addDict = new hashDict
             {
-                keyTimeStamp = DateTime.Now.ToString("mmssffff"),
-                publicPrivatePairs=JsonConvert.SerializeObject(new Dictionary<string, string>()),
+
             };
 
             _db.hashDict.Add(addDict);
@@ -45,17 +43,27 @@ namespace funkyChat.Controllers
 
         public async Task<IActionResult> fetchAndAddKeysToDictionary(string pub, string priv)
         {
-            hashDict dict = await _db.hashDict.FirstOrDefaultAsync(x=>x.Id==4);
-            
+            hashDict dict = await _db.hashDict.FirstOrDefaultAsync(x=>x.Id==1);
+
             if (dict == null)
             {
                 return NotFound();
             }
 
             string keysDict = dict.publicPrivatePairs;
-            var dictionary = JsonConvert.DeserializeObject<Dictionary<string, string>>(keysDict);
+            var dictionary = JsonConvert.DeserializeObject<Dictionary<hashKey, hashKey>>(keysDict);
 
-            dictionary.Add(pub, priv);
+            var publicKeyHash = new hashKey
+            {
+                key = pub,
+            };
+
+            var privateKeyHash = new hashKey
+            {
+                key = priv,
+            };
+
+            dictionary.Add(publicKeyHash, privateKeyHash);
 
             var updatedKeysDict = JsonConvert.SerializeObject(dictionary);
 
@@ -63,12 +71,12 @@ namespace funkyChat.Controllers
 
             _db.Entry(dict).State = EntityState.Modified;
 
-            await _db.SaveChangesAsync();
+            await _db.SaveChangesAsync(); 
 
             return Ok(200);
         }
 
-        public async Task<IActionResult> verifyKeysAndReturnPrivate(string pub)
+        public async Task<IActionResult> verifyKeys(string pub, string priv)
         {
             hashDict dict = await _db.hashDict.FirstOrDefaultAsync(x => x.Id == 1);
 
@@ -78,43 +86,45 @@ namespace funkyChat.Controllers
             }
 
             string keysDict = dict.publicPrivatePairs;
-            var dictionary = JsonConvert.DeserializeObject<Dictionary<string, string>>(keysDict);
-            string resultingPrivateKey="";
+            var dictionary = JsonConvert.DeserializeObject<Dictionary<hashKey, hashKey>>(keysDict);
 
-            if (dictionary.ContainsKey(pub))
-            {
-                return NotFound();
-            }
-            else
-            {
-                resultingPrivateKey = dictionary[pub];
-            }
-            return Ok(resultingPrivateKey);
+
         }
+
         public async Task<(string, string)> ReturnNewRSAPair()
         {
-            initDictionaryKeysStartup();
+          //  initDictionaryKeysStartup();
             RSACryptoServiceProvider rsaKey = new RSACryptoServiceProvider();
             string publicKeyBase64 = Convert.ToBase64String(rsaKey.ExportRSAPublicKey());
             string privateKeyBase64 = Convert.ToBase64String(rsaKey.ExportRSAPrivateKey());
 
+            //store them into a database (redis)? for now I will use postgres itself by json conversion
             //use a captcha so you generate them infrequently and avoid spam and storage waste
+
             var result = await fetchAndAddKeysToDictionary(publicKeyBase64, privateKeyBase64);
 
-            if (result is OkObjectResult okObjectResult){
-                  return (privateKeyBase64, publicKeyBase64);
-            }else if (result is NotFoundResult)
+            if (result is OkObjectResult okObjectResult)
             {
+                  return (privateKeyBase64, publicKeyBase64);
+            }
+            else if (result is NotFoundResult)
+            {
+                //create a new room from scratch 
                 return ("", "");
             }
+
             return (publicKeyBase64, privateKeyBase64);
+
+
         }
 
         private static bool checkConnection(ApplicationDbContext _db)
         {
             bool isConnected = _db.Database.CanConnect();
+
             if (isConnected)
                 return true;
+
             return false;
         }
 
@@ -123,6 +133,7 @@ namespace funkyChat.Controllers
             Debug.WriteLine(input.Length);
             if (input.Length != 88)
                 return false;
+
             try
             {
                 byte[] buffer = Convert.FromBase64String(input);
@@ -134,12 +145,14 @@ namespace funkyChat.Controllers
         public async Task<IActionResult> fetchRoom(string k1, string k2)
         {
             string pairHash = k1 + k2;
+
             var room = await _db.room.FirstOrDefaultAsync(x => x.keyPairHash == pairHash);
 
             if (room == null)
             {
                 return NotFound();
             }
+
             return Ok(room);
         }
         public async Task<Room> createNewRoom(string k1, string k2)
@@ -175,44 +188,37 @@ namespace funkyChat.Controllers
             //Check if strings are base64 encoded with a certain length
 
             //replace this with checking if the pairs are in the dictionary 
-            /*
             if (!(isBase64(othrUsrKey) && isBase64(yurUsrKey)) && (othrUsrKey != yurUsrKey))
                 //return the view with a message of invalid key pair
                 return RedirectToAction("Index", new { messageString = "enter valid key value pair" });
-            */
 
             if (!checkConnection(_db))
                 return RedirectToAction("Index", new { messageString = "Can't connect to Database" });
 
-            var privateKey = await verifyKeysAndReturnPrivate(othrUsrKey);
-            string otherUserPrivateKey = "";
-
-            if (privateKey is OkObjectResult okObjectResult){
-                var p = okObjectResult.Value;
-                p = otherUserPrivateKey;
-            }else if (privateKey is NotFoundResult){
-                //create a new room from scratch 
-                return RedirectToAction("Index", new { messageString = "Other user doesn't exist" });
-            }
-
-            var result = await fetchRoom(yurUsrKey, otherUserPrivateKey);
+            var result = await fetchRoom(yurUsrKey, othrUsrKey);
             Room room = null;
 
             //both yurUsrKey is your private key and othrUsrKey is the public key of the other user
 
-            if (result is OkObjectResult okObjectResult2){
-                var res = okObjectResult2.Value;
+            if (result is OkObjectResult okObjectResult)
+            {
+                var res = okObjectResult.Value;
                 room = (Room)res;
-            }else if (result is NotFoundResult){
-                //create a new room from scratch 
-                room = await createNewRoom(yurUsrKey, otherUserPrivateKey);
             }
+            else if (result is NotFoundResult)
+            {
+                //create a new room from scratch 
+                room = await createNewRoom(yurUsrKey, othrUsrKey);
+            }
+
             return RedirectToAction("Room", new { Room = room });
         }
+
         public IActionResult Room(Room Room)
         {
             return View();
         }
+
         public IActionResult Privacy()
         {
             return View();
